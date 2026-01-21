@@ -22,8 +22,69 @@ if not MASTODON_ACCESS_TOKEN:
     print("❌ Error: MASTODON_ACCESS_TOKEN not found in .env file")
     sys.exit(1)
 
-def post_to_mastodon(content, instance_url=None, access_token=None):
-    """Post content to Mastodon"""
+def upload_media_to_mastodon(image_path_or_url, instance_url=None, access_token=None):
+    """Upload media to Mastodon and return media_id"""
+    if instance_url is None:
+        instance_url = MASTODON_INSTANCE
+    
+    if access_token is None:
+        access_token = MASTODON_ACCESS_TOKEN
+    
+    url = f"{instance_url}/api/v2/media"
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    
+    # Check if it's a URL or local file
+    if image_path_or_url.startswith("http://") or image_path_or_url.startswith("https://"):
+        # Download the image first
+        import tempfile
+        response = requests.get(image_path_or_url, timeout=30)
+        response.raise_for_status()
+        
+        # Determine file extension
+        ext = "webp"  # Default
+        if ".png" in image_path_or_url.lower():
+            ext = "png"
+        elif ".jpg" in image_path_or_url.lower() or ".jpeg" in image_path_or_url.lower():
+            ext = "jpg"
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp_file:
+            tmp_file.write(response.content)
+            image_path = tmp_file.name
+    else:
+        image_path = image_path_or_url
+    
+    # Upload the file
+    try:
+        with open(image_path, "rb") as f:
+            files = {"file": f}
+            data = {}
+            
+            response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            media_id = result.get("id")
+            
+            # Clean up temp file if we created it
+            if image_path_or_url.startswith("http://") or image_path_or_url.startswith("https://"):
+                os.unlink(image_path)
+            
+            return {
+                "success": True,
+                "media_id": media_id
+            }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def post_to_mastodon(content, instance_url=None, access_token=None, image_path_or_url=None):
+    """Post content to Mastodon with optional image"""
     if instance_url is None:
         instance_url = MASTODON_INSTANCE
     
@@ -49,8 +110,19 @@ def post_to_mastodon(content, instance_url=None, access_token=None):
         "visibility": "public"  # Options: public, unlisted, private, direct
     }
     
+    # Upload image if provided
+    if image_path_or_url:
+        print("📤 Uploading image to Mastodon...")
+        media_result = upload_media_to_mastodon(image_path_or_url, instance_url, access_token)
+        if media_result["success"]:
+            data["media_ids"] = [media_result["media_id"]]
+            print("✅ Image uploaded successfully")
+        else:
+            print(f"⚠️  Warning: Could not upload image: {media_result.get('error')}")
+            print("Posting without image...")
+    
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=10)
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         
         result = response.json()
