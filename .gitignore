@@ -1,0 +1,11 @@
+.venv/
+venv/
+env/
+google-cloud-sdk/
+*.tar.gz
+.env
+.env.*
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
